@@ -1,0 +1,127 @@
+---
+# playbook1.yml
+###############################################################################
+# Play 1: Web node - copy index.html, install & start Apache
+###############################################################################
+- name: Configure web server on webserver
+  hosts: webserver
+  become: true
+  gather_facts: true
+
+  vars:
+    # Pick correct package/service/docroot by OS family
+    apache_map:
+      Debian:
+        pkg: apache2
+        svc: apache2
+        docroot: /var/www/html
+      Ubuntu:
+        pkg: apache2
+        svc: apache2
+        docroot: /var/www/html
+      RedHat:
+        pkg: httpd
+        svc: httpd
+        docroot: /var/www/html
+
+  tasks:
+    - name: Select Apache settings for this OS
+      ansible.builtin.set_fact:
+        apache_pkg: "{{ apache_map[ansible_facts.os_family].pkg | default('apache2') }}"
+        apache_svc: "{{ apache_map[ansible_facts.os_family].svc | default('apache2') }}"
+        apache_docroot: "{{ apache_map[ansible_facts.os_family].docroot | default('/var/www/html') }}"
+
+    - name: Install Apache webserver
+      ansible.builtin.package:
+        name: "{{ apache_pkg }}"
+        state: present
+
+    - name: Ensure Apache is enabled and running
+      ansible.builtin.service:
+        name: "{{ apache_svc }}"
+        state: started
+        enabled: true
+
+    - name: Copy index.html to Apache document root
+      ansible.builtin.copy:
+        # Your index.html should live alongside this playbook as instructed
+        src: "{{ playbook_dir }}/index.html"
+        dest: "{{ apache_docroot }}/index.html"
+        owner: root
+        group: root
+        mode: "0644"
+
+###############################################################################
+# Play 2: User/Groups node - groups, users, passwords, optional folders
+###############################################################################
+- name: Configure users and groups on fileserver
+  hosts: fileserver
+  become: true
+  gather_facts: false
+
+  vars:
+    # Use unique, fixed IDs (adjust if you already use these IDs)
+    sales_gid: 2001
+    technical_gid: 2002
+    user3_uid: 3001
+    user4_uid: 3002
+
+    # Password: "router1" hashed with SHA-512 (Ansible requires a hashed value)
+    # If you prefer to generate your own, replace this hash with your own SHA-512 crypt hash.
+    user_password_hash: "$6$vZJFtsz9qzYb5nK5$LxP9p1pSElwH.PFR/oPT1rBHblDQijgIm2YVGrjd3GZamwcp55UlOu9hsrHQHovw5P/utbbDp88piWK5cYilq1"
+
+    # Optional folders
+    clients_dir: /Clients
+    it_dir: /IT
+
+  tasks:
+    - name: Create group 'Sales' with unique GID
+      ansible.builtin.group:
+        name: Sales
+        gid: "{{ sales_gid }}"
+        state: present
+
+    - name: Create group 'Technical' with unique GID
+      ansible.builtin.group:
+        name: Technical
+        gid: "{{ technical_gid }}"
+        state: present
+
+    - name: Create user3 (in Sales) with unique UID and password
+      ansible.builtin.user:
+        name: user3
+        uid: "{{ user3_uid }}"
+        groups: "Sales"
+        append: false
+        password: "{{ user_password_hash }}"
+        shell: /bin/bash
+        create_home: true
+        state: present
+
+    - name: Create user4 (in Technical) with unique UID and password
+      ansible.builtin.user:
+        name: user4
+        uid: "{{ user4_uid }}"
+        groups: "Technical"
+        append: false
+        password: "{{ user_password_hash }}"
+        shell: /bin/bash
+        create_home: true
+        state: present
+
+    # ----------------------- OPTIONAL SECTION -----------------------
+    - name: Create 'Clients' folder (optional)
+      ansible.builtin.file:
+        path: "{{ clients_dir }}"
+        state: directory
+        owner: user3
+        group: Sales
+        mode: "0750"
+
+    - name: Create 'IT' folder (optional)
+      ansible.builtin.file:
+        path: "{{ it_dir }}"
+        state: directory
+        owner: user4
+        group: Technical
+        mode: "0750"
